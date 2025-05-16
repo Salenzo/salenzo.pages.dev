@@ -1,0 +1,21 @@
+{
+	"name": "salenzo-debug",
+	"pages_build_output_dir": "",
+	"compatibility_date": "2025-05-05",
+	"observability": {
+		"enabled": true
+	},
+	"services": [
+		{
+			"binding": "hello",
+			"service": "hello"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "answer_log",
+			"database_name": "answer_log",
+			"database_id": "15a8c837-a699-468b-a5c6-42090923d246"
+		}
+	]
+}
