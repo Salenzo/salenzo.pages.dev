@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<link href="favicon.svg" rel="shortcut icon">
+<title>Ŝalenzo</title>
+<style>
+  body {
+    margin: 0;
+  }
+
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+  }
+
+</style>
+<canvas id="canvas"></canvas>
+<script id="vs" type="text/x-glsl">
+uniform mat4 u_worldViewProjection;
+
+attribute vec4 a_position;
+attribute vec2 a_texcoord;
+
+varying vec2 v_texcoord;
+
+void main() {
+  v_texcoord = a_texcoord;
+  gl_Position = a_position;
+}
+</script>
+<script id="fs" type="text/x-glsl">
+precision mediump float;
+
+varying vec2 v_texcoord;
+uniform highp float time;
+uniform highp float glowingLine;
+uniform highp float staticNoise;
+uniform lowp float rgbShift;
+uniform lowp float chromaColor;
+uniform lowp float bloom;
+uniform lowp float jitter;
+uniform lowp float flickering;
+uniform lowp float screenCurvature;
+uniform lowp float screenShadowCoeff;
+uniform lowp float frameShadowCoeff;
+uniform lowp vec4 frameColor;
+uniform lowp vec4 fontColor;
+uniform lowp vec4 backgroundColor;
+uniform mediump vec2 margin;
+uniform sampler2D font;
+uniform sampler2D bloomSource;
+
+float rgb2grey(vec3 v) {
+  return dot(v, vec3(.2126, .7152, .0722));
+}
+
+vec3 convertWithChroma(vec3 v) {
+  return fontColor.rgb * mix(vec3(rgb2grey(v)), v, chromaColor);
+}
+
+vec4 blur9(sampler2D image, vec2 uv) {
+  return texture2D(image, uv);
+}
+
+float max2(vec2 v) {
+  return max(v.x, v.y);
+}
+
+float sum2(vec2 v) {
+  return v.x + v.y;
+}
+
+float prod2(vec2 v) {
+  return v.x * v.y;
+}
+
+vec2 positiveLog(vec2 x) {
+  return clamp(log(x), vec2(0.0), vec2(100.0));
+}
+
+vec3 hash33(vec3 p3) {
+  // https://www.shadertoy.com/view/4djSRW
+	p3 = fract(p3 * vec3(.1031, .1030, .0973));
+  p3 += dot(p3, p3.yxz + 33.33);
+  return fract((p3.xxy + p3.yxx) * p3.zyx);
+}
+
+void main() {
+  vec3 noiseVal = hash33(vec3(gl_FragCoord.xy, fract(time * .0114514)));
+
+  vec2 cc = v_texcoord - vec2(0.5);
+  float distance = dot(cc, cc) * screenCurvature;
+  vec2 curvatureCoords = v_texcoord + cc * (1.0 + distance) * distance;
+  curvatureCoords *= vec2(1.0) + margin * 2.0;
+  curvatureCoords -= margin;
+  vec2 txt_coords = -2.0 * curvatureCoords + 3.0 * step(vec2(0.0), curvatureCoords) * curvatureCoords - 3.0 * step(vec2(1.0), curvatureCoords) * (curvatureCoords - 1.0);
+  txt_coords += (noiseVal.xy - vec2(0.5)) * vec2(.0035, .001) * jitter;
+  vec3 txt_color = texture2D(font, txt_coords).rgb;
+
+  vec2 displacement = vec2(12.0, 0.0) * rgbShift;
+  vec3 rightColor = texture2D(font, txt_coords + displacement).rgb;
+  vec3 leftColor = texture2D(font, txt_coords - displacement).rgb;
+  txt_color *= .6;
+  txt_color += leftColor * vec3(.1, .2, .3) + rightColor * vec3(.3, .2, .1);
+
+  {
+    float color = 0.0001;
+    float noise = staticNoise;
+    color += noiseVal.z * noise * (1.0 - distance * 1.3);
+    color += fract(smoothstep(-120.0, 0.0, curvatureCoords.y * 114.514 - (114.514 + 120.0) * fract(time * .0001))) * glowingLine;
+    txt_color += vec3(0.0001);
+    txt_color += fontColor.rgb * vec3(color);
+  }
+  float greyscale_color = rgb2grey(txt_color);
+
+  float reflectionMask = sum2(step(vec2(0.0), curvatureCoords) - step(vec2(1.0), curvatureCoords));
+  reflectionMask = clamp(reflectionMask, 0.0, 1.0);
+
+  vec3 foregroundColor = mix(fontColor.rgb, txt_color * fontColor.rgb / greyscale_color, chromaColor);
+  vec3 finalColor = mix(backgroundColor.rgb, foregroundColor, greyscale_color * reflectionMask);
+
+  vec4 bloomFullColor = blur9(bloomSource, txt_coords);
+  vec3 bloomColor = bloomFullColor.rgb;
+  float bloomAlpha = bloomFullColor.a;
+  bloomColor = convertWithChroma(bloomColor);
+  finalColor += clamp(bloomColor * bloom * bloomAlpha, 0.0, 0.5);
+  finalColor *= 1.0 + clamp(sin(time * .00114) + cos(time * .00514) + (fract(time * .01919) - .5) * fract(time * .00810) * .25, -.5, .5) * flickering;
+
+  vec2 vignetteCoords = v_texcoord * (1.0 - v_texcoord.yx);
+  float vignette = pow(prod2(vignetteCoords) * 15.0, 0.25);
+  vec3 color = frameColor.rgb * vec3(1.0 - vignette);
+  float alpha = 0.0;
+  float frameShadow = max2(positiveLog(-curvatureCoords * frameShadowCoeff + vec2(1.0)) + positiveLog(curvatureCoords * frameShadowCoeff - (vec2(frameShadowCoeff) - vec2(1.0))));
+  frameShadow = max(sqrt(frameShadow), 0.0);
+  color *= frameShadow;
+  alpha = sum2(1.0 - step(vec2(0.0), curvatureCoords) + step(vec2(1.0), curvatureCoords));
+  alpha = clamp(alpha, 0.0, 1.0);
+  alpha *= mix(1.0, .9, frameShadow);
+  float screenShadow = 1.0 - prod2(positiveLog(curvatureCoords * screenShadowCoeff + vec2(1.0)) * positiveLog(-curvatureCoords * screenShadowCoeff + vec2(screenShadowCoeff + 1.0)));
+  alpha = max(.8 * screenShadow, alpha);
+
+  gl_FragColor = vec4(mix(finalColor, color, alpha), 1.0);
+}
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/twgl.js/5.3.0/twgl-full.min.js"></script>
+<script>
+  twgl.setDefaults({ attribPrefix: 'a_' })
+  const gl = canvas.getContext('webgl', { powerPreference: 'low-power' })
+  const programInfo = twgl.createProgramInfo(gl, ['vs', 'fs'])
+  const bufferInfo = twgl.primitives.createPlaneBufferInfo(gl, 2, 2, 1, 1, twgl.m4.rotationX(Math.PI / 2))
+
+  // Shared values
+  const ctx = document.createElement('canvas').getContext('2d')
+  function makeText(text) {
+    ctx.font = '20px monospace'
+    ctx.canvas.width = Math.ceil(ctx.measureText(text).width) + 2
+    ctx.canvas.height = 24
+    ctx.font = '20px monospace'
+    ctx.fillStyle = 'white'
+    ctx.textAlign = 'center'
+    ctx.textBaseAlign = 'middle'
+    ctx.fillText(text, ctx.canvas.width / 2 | 0, ctx.canvas.height / 2 | 0);
+    return twgl.createTexture(gl, { src: ctx.canvas, mag: gl.NEAREST })
+  }
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
+
+  const lint = (a, b, t) => a * (1 - t) + b * t
+  const mix = (c1, c2, alpha) => c1.map((x, i) => lint(c2[i], x, alpha))
+  const smoothstep = (min, max, value) => {
+    let x = Math.max(0, Math.min(1, (value - min) / (max - min)))
+    return x * x * (3 - 2 * x)
+  }
+  const strToColor = s => [
+    parseInt(s.substring(1, 3), 16) / 256,
+    parseInt(s.substring(3, 5), 16) / 256,
+    parseInt(s.substring(5, 7), 16) / 256,
+    1,
+  ]
+  let backgroundColor = [0, 0, 0, 1]
+  let fontColor = [1, 1, 1, 1]
+  let glowingLine = .15
+  let ambientLight = .15
+  let screenCurvature = .4
+  let cols = 64
+  let bloom = .3
+  const drawObjects = [{
+    programInfo,
+    bufferInfo,
+    uniforms: {
+      time: 0,
+      glowingLine: glowingLine,
+      staticNoise: .05,
+      rgbShift: .015 / cols,
+      chromaColor: 1,
+      bloom: bloom * 2.5,
+      jitter: .15,
+      flickering: .1,
+      screenCurvature: screenCurvature * .4,
+      // Coefficient of the log curve used to approximate shadowing
+      screenShadowCoeff: lint(18, 12, ambientLight),
+      frameShadowCoeff: lint(18, 12, ambientLight),
+      frameColor: mix([1, 1, 1, 1], mix(fontColor, backgroundColor, .2), lint(.2, .8, ambientLight)),
+      fontColor: fontColor,
+      backgroundColor: backgroundColor,
+      margin: [.05, .05],
+      font: twgl.createTexture(gl, { src: 'dosfnt/tmp2.png', mag: gl.NEAREST }),
+      bloomSource: twgl.createTexture(gl, { src: 'dosfnt/tmp2.png', mag: gl.LINEAR }),
+    },
+  }]
+
+  requestAnimationFrame(function render(time) {
+    twgl.resizeCanvasToDisplaySize(gl.canvas)
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
+
+    gl.enable(gl.BLEND)
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+    gl.clearColor(.114, .514, .1919, 1)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+
+    drawObjects[0].uniforms.time = time
+    twgl.drawObjectList(gl, drawObjects)
+
+    requestAnimationFrame(render)
+  })
+</script>
