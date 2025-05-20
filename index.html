@@ -15,12 +15,11 @@
 </style>
 <canvas id="canvas"></canvas>
 <script id="vs" type="text/x-glsl">
-uniform mat4 u_worldViewProjection;
+#version 300 es
 
-attribute vec4 a_position;
-attribute vec2 a_texcoord;
-
-varying vec2 v_texcoord;
+in vec4 a_position;
+in vec2 a_texcoord;
+out vec2 v_texcoord;
 
 void main() {
 	v_texcoord = a_texcoord;
@@ -28,27 +27,30 @@ void main() {
 }
 </script>
 <script id="fs0" type="text/x-glsl">
+#version 300 es
 precision mediump float;
 
-varying vec2 v_texcoord;
+in vec2 v_texcoord;
+out vec4 outColor;
 uniform sampler2D textBuffer;
 uniform sampler2D font;
 
 void main() {
-	vec4 cell = texture2D(textBuffer, v_texcoord) * 255.0;
-	//float g=(1.1);
+	vec4 cell = round(texture(textBuffer, v_texcoord) * 255.0);
 	float code = dot(cell.rgb, vec3(1.0, 256.0, 65536.0));
 	//float color = cell.a;
-	gl_FragColor = texture2D(font,
+	outColor = texture(font,
 		vec2(mod(code, 64.0) / 64.0, floor(code / 64.0) / 13.0)
 		+ vec2(fract(v_texcoord.x * 80.0) / 64.0, fract(v_texcoord.y * 24.0) / 13.0));
 }
 </script>
 <script id="fs" type="text/x-glsl">
+#version 300 es
 // https://github.com/Swordfish90/cool-retro-term/blob/1.2.0/app/qml/ShaderTerminal.qml
 precision mediump float;
 
-varying vec2 v_texcoord;
+in vec2 v_texcoord;
+out vec4 outColor;
 uniform highp float time;
 uniform highp float glowingLine;
 uniform highp float staticNoise;
@@ -79,10 +81,10 @@ vec4 blur4(sampler2D image, vec2 uv) {
 	// https://code.qt.io/cgit/qt/qt5compat.git/tree/src/imports/graphicaleffects5/shaders_ng/fastblur_internal.vert?h=6.9.1
 	// https://code.qt.io/cgit/qt/qt5compat.git/tree/src/imports/graphicaleffects5/shaders_ng/fastblur_internal.frag?h=6.9.1
 	vec2 step = vec2(.002, .002);
-	return .25 * (texture2D(image, vec2(uv.x + step.x, uv.y + step.y * 0.36))
-		+ texture2D(image, vec2(uv.x + step.x * 0.36, uv.y - step.y))
-		+ texture2D(image, vec2(uv.x - step.x * 0.36, uv.y + step.y))
-		+ texture2D(image, vec2(uv.x - step.x, uv.y - step.y * 0.36)));
+	return .25 * (texture(image, vec2(uv.x + step.x, uv.y + step.y * 0.36))
+		+ texture(image, vec2(uv.x + step.x * 0.36, uv.y - step.y))
+		+ texture(image, vec2(uv.x - step.x * 0.36, uv.y + step.y))
+		+ texture(image, vec2(uv.x - step.x, uv.y - step.y * 0.36)));
 }
 
 float max2(vec2 v) {
@@ -118,11 +120,11 @@ void main() {
 	curvatureCoords -= margin;
 	vec2 txt_coords = -2.0 * curvatureCoords + 3.0 * step(vec2(0.0), curvatureCoords) * curvatureCoords - 3.0 * step(vec2(1.0), curvatureCoords) * (curvatureCoords - 1.0);
 	txt_coords += (noiseVal.xy - vec2(0.5)) * vec2(.0035, .001) * jitter;
-	vec3 txt_color = texture2D(font, txt_coords).rgb;
+	vec3 txt_color = texture(font, txt_coords).rgb;
 
 	vec2 displacement = vec2(12.0, 0.0) * rgbShift;
-	vec3 rightColor = texture2D(font, txt_coords + displacement).rgb;
-	vec3 leftColor = texture2D(font, txt_coords - displacement).rgb;
+	vec3 rightColor = texture(font, txt_coords + displacement).rgb;
+	vec3 leftColor = texture(font, txt_coords - displacement).rgb;
 	txt_color *= .6;
 	txt_color += leftColor * vec3(.1, .2, .3) + rightColor * vec3(.3, .2, .1);
 
@@ -163,13 +165,13 @@ void main() {
 		alpha = max(.8 * screenShadow, alpha);
 	}
 
-	gl_FragColor = vec4(mix(finalColor, color, alpha), 1.0);
-	//gl_FragColor = texture2D(font, v_texcoord);
+	outColor = vec4(mix(finalColor, color, alpha), 1.0);
+	//outColor = texture(font, v_texcoord);
 }
 </script>
 <script src="/vendor/twgl.min.js"></script>
 <script>
-	const gl = canvas.getContext('webgl', { alpha: false, powerPreference: 'low-power' })
+	const gl = canvas.getContext('webgl2', { alpha: false, powerPreference: 'low-power' })
 
 	const lerp = (a, b, t) => a * (1 - t) + b * t
 	const mix = (c1, c2, alpha) => c1.map((x, i) => lerp(c2[i], x, alpha))
@@ -178,7 +180,7 @@ void main() {
 	let glowingLine = .15
 	let ambientLight = .15
 	let screenCurvature = .4
-	let cols = 64
+	let cols = 80
 	let bloom = .3
 
 	const bufferInfo0 = twgl.createFramebufferInfo(gl, [
