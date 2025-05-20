@@ -27,6 +27,23 @@ void main() {
 	gl_Position = a_position;
 }
 </script>
+<script id="fs0" type="text/x-glsl">
+precision mediump float;
+
+varying vec2 v_texcoord;
+uniform sampler2D textBuffer;
+uniform sampler2D font;
+
+void main() {
+	vec4 cell = texture2D(textBuffer, v_texcoord) * 255.0;
+	//float g=(1.1);
+	float code = dot(cell.rgb, vec3(1.0, 256.0, 65536.0));
+	//float color = cell.a;
+	gl_FragColor = texture2D(font,
+		vec2(mod(code, 64.0) / 64.0, floor(code / 64.0) / 13.0)
+		+ vec2(fract(v_texcoord.x * 80.0) / 64.0, fract(v_texcoord.y * 24.0) / 13.0));
+}
+</script>
 <script id="fs" type="text/x-glsl">
 // https://github.com/Swordfish90/cool-retro-term/blob/1.2.0/app/qml/ShaderTerminal.qml
 precision mediump float;
@@ -147,6 +164,7 @@ void main() {
 	}
 
 	gl_FragColor = vec4(mix(finalColor, color, alpha), 1.0);
+	//gl_FragColor = texture2D(font, v_texcoord);
 }
 </script>
 <script src="/vendor/twgl.min.js"></script>
@@ -162,7 +180,34 @@ void main() {
 	let screenCurvature = .4
 	let cols = 64
 	let bloom = .3
-	const drawObjects = [{
+
+	const bufferInfo0 = twgl.createFramebufferInfo(gl, [
+		{ format: gl.RGBA, mag: gl.NEAREST },
+	], 8 * 80, 16 * 24)
+
+	const text = 'Salenzo 2025'
+	const drawObjects0 = [{
+		programInfo: twgl.createProgramInfo(gl, ['vs', 'fs0']),
+		bufferInfo: twgl.createBufferInfoFromArrays(gl, {
+			a_position: [-1, 3, 0, 3, -1, 0, -1, -1, 0],
+			a_texcoord: [0, 2, 2, 0, 0, 0],
+		}),
+		uniforms: {
+			// Surely textures are for text…
+			textBuffer: twgl.createTexture(gl, {
+				format: gl.RGBA,
+				minMag: gl.NEAREST,
+				src: Array.from({ length: 80 * 24 }, (_, i) => {
+					return [text.charCodeAt(i) || 7, 0, 0, 1]
+				}).flat(),
+				width: 80,
+				height: 24,
+			}),
+			font: twgl.createTexture(gl, { src: 'dosfnt.png', mag: gl.NEAREST }),
+		},
+	}]
+
+	const drawObjects1 = [{
 		programInfo: twgl.createProgramInfo(gl, ['vs', 'fs']),
 		bufferInfo: twgl.createBufferInfoFromArrays(gl, {
 			a_position: [-1, 3, 0, 3, -1, 0, -1, -1, 0],
@@ -178,29 +223,31 @@ void main() {
 			jitter: .15,
 			flickering: .1,
 			screenCurvature: screenCurvature * .4,
-			// Coefficient of the log curve used to approximate shadowing
 			screenShadowCoeff: lerp(18, 12, ambientLight),
 			frameShadowCoeff: lerp(18, 12, ambientLight),
 			frameColor: mix([1, 1, 1, 1], mix(fontColor, backgroundColor, .2), lerp(.2, .8, ambientLight)),
 			fontColor,
 			backgroundColor,
 			margin: [.05, .05],
-			font: twgl.createTexture(gl, { src: 'dosfnt.png', mag: gl.NEAREST }),
-			bloomSource: twgl.createTexture(gl, { src: 'dosfnt.png', mag: gl.NEAREST }),
+			font: bufferInfo0.attachments[0],
+			bloomSource: bufferInfo0.attachments[0],
 		},
 	}]
 
 	requestAnimationFrame(function render(time) {
 		twgl.resizeCanvasToDisplaySize(gl.canvas)
-		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
 
-		gl.enable(gl.BLEND)
-		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+		twgl.bindFramebufferInfo(gl, bufferInfo0)
+		gl.clearColor(.19, .19, .810, 1)
+		gl.clear(gl.COLOR_BUFFER_BIT)
+		twgl.drawObjectList(gl, drawObjects0)
+
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
 		gl.clearColor(.114, .514, .1919, 1)
 		gl.clear(gl.COLOR_BUFFER_BIT)
-
-		drawObjects[0].uniforms.time = time
-		twgl.drawObjectList(gl, drawObjects)
+		drawObjects1[0].uniforms.time = time
+		twgl.drawObjectList(gl, drawObjects1)
 
 		requestAnimationFrame(render)
 	})
