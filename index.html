@@ -14,15 +14,15 @@
 	}
 </style>
 <canvas id="canvas"></canvas>
-<script id="vs" type="text/x-glsl">
+<script id="vs0" type="text/x-glsl">
 #version 300 es
+precision mediump float;
 
 in vec4 a_position;
-in vec2 a_texcoord;
 out vec2 v_texcoord;
 
 void main() {
-	v_texcoord = a_texcoord;
+	v_texcoord = (a_position.xy + 1.) * .5;
 	gl_Position = a_position;
 }
 </script>
@@ -43,6 +43,19 @@ void main() {
 		texture(palette, vec2(cell.a * 16.)),
 		texture(font, cell.rg + fract(v_texcoord * vec2(textureSize(textBuffer, 0))) / 32.)
 	);
+}
+</script>
+<script id="vs1" type="text/x-glsl">
+#version 300 es
+precision mediump float;
+
+in vec4 a_position;
+out vec2 v_texcoord;
+uniform vec2 scale;
+
+void main() {
+	v_texcoord = (a_position.xy * scale + 1.) * .5;
+	gl_Position = a_position;
 }
 </script>
 <script id="fs1" type="text/x-glsl">
@@ -118,7 +131,7 @@ void main() {
 	vec2 curvatureCoords = v_texcoord + cc * (1.0 + distance) * distance;
 	curvatureCoords *= vec2(1.0) + margin * 2.0;
 	curvatureCoords -= margin;
-	vec2 txt_coords = -2.0 * curvatureCoords + 3.0 * step(vec2(0.0), curvatureCoords) * curvatureCoords - 3.0 * step(vec2(1.0), curvatureCoords) * (curvatureCoords - 1.0);
+	vec2 txt_coords = curvatureCoords;
 	txt_coords += (noiseVal.xy - vec2(0.5)) * vec2(.0035, .001) * jitter;
 	vec3 txt_color = texture(vram, txt_coords).rgb;
 
@@ -151,8 +164,7 @@ void main() {
 	finalColor += clamp(bloomColor * bloom * bloomAlpha, 0.0, 0.5);
 	finalColor *= 1.0 + clamp(sin(time * .00114) + cos(time * .00514) + (fract(time * .01919) - .5) * fract(time * .00810) * .25, -.5, .5) * flickering;
 
-	vec2 vignetteCoords = v_texcoord * (1.0 - v_texcoord.yx);
-	float vignette = pow(prod2(vignetteCoords) * 15.0, 0.25);
+	float vignette = sqrt(max(.5, 1. - length(cc)));
 	vec3 color = frameColor.rgb * vec3(1.0 - vignette);
 	float frameShadow = max2(positiveLog(-curvatureCoords * frameShadowCoeff + vec2(1.0)) + positiveLog(curvatureCoords * frameShadowCoeff - vec2(frameShadowCoeff - 1.0)));
 	frameShadow = max(sqrt(frameShadow), 0.0);
@@ -183,7 +195,7 @@ void main() {
 	let bloom = .3
 
 	const bufferInfo0 = twgl.createFramebufferInfo(gl, [
-		{ mag: gl.NEAREST },
+		{ mag: gl.NEAREST, wrap: gl.MIRRORED_REPEAT },
 	], 8 * 80, 16 * 24)
 
 	function useVAO(drawObject) {
@@ -193,10 +205,9 @@ void main() {
 	}
 
 	const drawObjects0 = [useVAO({
-		programInfo: twgl.createProgramInfo(gl, ['vs', 'fs0']),
+		programInfo: twgl.createProgramInfo(gl, ['vs0', 'fs0']),
 		bufferInfo: twgl.createBufferInfoFromArrays(gl, {
 			a_position: [-1, 3, 0, 3, -1, 0, -1, -1, 0],
-			a_texcoord: [0, 2, 2, 0, 0, 0],
 		}),
 		uniforms: twgl.createTextures(gl, {
 			// Textures are for text, sure…
@@ -229,12 +240,12 @@ void main() {
 	})]
 
 	const drawObjects1 = [useVAO({
-		programInfo: twgl.createProgramInfo(gl, ['vs', 'fs1']),
+		programInfo: twgl.createProgramInfo(gl, ['vs1', 'fs1']),
 		bufferInfo: twgl.createBufferInfoFromArrays(gl, {
 			a_position: [-1, 3, 0, 3, -1, 0, -1, -1, 0],
-			a_texcoord: [0, -1, 2, 1, 0, 1],
 		}),
 		uniforms: {
+			scale: [1, 1],
 			time: 0,
 			glowingLine,
 			staticNoise: .05,
@@ -285,8 +296,11 @@ void main() {
 		print((Math.random() * 16 | 0).toString(16).toUpperCase())
 	}, 100)
 
+	const targetAspectRatio = 4 / 3
 	requestAnimationFrame(function render(time) {
 		twgl.resizeCanvasToDisplaySize(gl.canvas)
+		const viewportWidth = gl.canvas.width
+		const viewportHeight = gl.canvas.height
 
 		if (textBufferDirty) {
 			twgl.setTextureFromArray(gl, drawObjects0[0].uniforms.textBuffer, textBuffer, {
@@ -302,9 +316,16 @@ void main() {
 		twgl.drawObjectList(gl, drawObjects0)
 
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null)
-		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
+		gl.viewport(0, 0, viewportWidth, viewportHeight)
 		gl.clearColor(.114, .514, .1919, 1)
 		gl.clear(gl.COLOR_BUFFER_BIT)
+		if (viewportWidth > viewportHeight * targetAspectRatio) {
+			drawObjects1[0].uniforms.scale[0] = viewportWidth / (targetAspectRatio * viewportHeight)
+			drawObjects1[0].uniforms.scale[1] = -1
+		} else {
+			drawObjects1[0].uniforms.scale[0] = 1
+			drawObjects1[0].uniforms.scale[1] = -viewportHeight * targetAspectRatio / viewportWidth
+		}
 		drawObjects1[0].uniforms.time = time
 		twgl.drawObjectList(gl, drawObjects1)
 
