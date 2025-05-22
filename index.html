@@ -186,7 +186,13 @@ void main() {
 		{ mag: gl.NEAREST },
 	], 8 * 80, 16 * 24)
 
-	const drawObjects0 = [{
+	function useVAO(drawObject) {
+		drawObject.vertexArrayInfo = twgl.createVertexArrayInfo(gl, drawObject.programInfo, drawObject.bufferInfo)
+		delete drawObject.bufferInfo
+		return drawObject
+	}
+
+	const drawObjects0 = [useVAO({
 		programInfo: twgl.createProgramInfo(gl, ['vs', 'fs0']),
 		bufferInfo: twgl.createBufferInfoFromArrays(gl, {
 			a_position: [-1, 3, 0, 3, -1, 0, -1, -1, 0],
@@ -220,9 +226,9 @@ void main() {
 				minMag: gl.NEAREST,
 			},
 		}),
-	}]
+	})]
 
-	const drawObjects1 = [{
+	const drawObjects1 = [useVAO({
 		programInfo: twgl.createProgramInfo(gl, ['vs', 'fs1']),
 		bufferInfo: twgl.createBufferInfoFromArrays(gl, {
 			a_position: [-1, 3, 0, 3, -1, 0, -1, -1, 0],
@@ -246,7 +252,7 @@ void main() {
 			margin: [.05, .05],
 			vram: bufferInfo0.attachments[0],
 		},
-	}]
+	})]
 
 	const textBuffer = new Uint8Array(80 * 24 * 4)
 	let textBufferDirty = false
