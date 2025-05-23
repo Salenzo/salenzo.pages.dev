@@ -66,8 +66,8 @@ precision mediump float;
 in vec2 v_texcoord;
 out vec4 outColor;
 uniform highp float time;
-uniform highp float glowingLine;
-uniform highp float staticNoise;
+const float glowingLine = .15;
+const float staticNoise = .05;
 uniform lowp float rgbShift;
 uniform lowp float chromaColor;
 uniform lowp float bloom;
@@ -143,9 +143,9 @@ void main() {
 
 	{
 		float color = 0.0001;
-		float noise = staticNoise;
-		color += noiseVal.z * noise * (1.0 - distance * 1.3);
-		color += fract(smoothstep(-120.0, 0.0, curvatureCoords.y * 114.514 - (114.514 + 120.0) * fract(time * .0001))) * glowingLine;
+		color += noiseVal.z * staticNoise * (1.0 - distance * 1.3);
+		float curvatureCoordsYMirroredRepeat = 1. - abs(fract(curvatureCoords.y * .5) * 2. - 1.);
+		color += fract(smoothstep(-.5, 0., curvatureCoordsYMirroredRepeat * .5 - fract(time * .0001))) * glowingLine;
 		txt_color += vec3(0.0001);
 		txt_color += fontColor.rgb * vec3(color);
 	}
@@ -188,7 +188,6 @@ void main() {
 	const mix = (c1, c2, alpha) => c1.map((x, i) => lerp(c2[i], x, alpha))
 	let backgroundColor = [0, 0, 0, 1]
 	let fontColor = [1, 1, 1, 1]
-	let glowingLine = .15
 	let ambientLight = .15
 	let screenCurvature = .4
 	let cols = 80
@@ -248,8 +247,6 @@ void main() {
 		uniforms: {
 			scale: [1, 1],
 			time: 0,
-			glowingLine,
-			staticNoise: .05,
 			rgbShift: .015 / cols,
 			chromaColor: 1,
 			bloom: bloom * 2.5,
