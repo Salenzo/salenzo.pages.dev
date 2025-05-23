@@ -68,18 +68,18 @@ out vec4 outColor;
 uniform highp float time;
 const float glowingLine = .15;
 const float staticNoise = .05;
-uniform lowp float rgbShift;
-uniform lowp float chromaColor;
-uniform lowp float bloom;
-uniform lowp float jitter;
-uniform lowp float flickering;
-uniform lowp float screenCurvature;
-uniform lowp float screenShadowCoeff;
-uniform lowp float frameShadowCoeff;
-uniform lowp vec4 frameColor;
-uniform lowp vec4 fontColor;
-uniform lowp vec4 backgroundColor;
-uniform mediump vec2 margin;
+uniform float rgbShift;
+const float chromaColor = 1.;
+const float bloom = .3 * 2.5;
+const float jitter = .15;
+const float flickering = .1;
+const float screenCurvature = .4 * .4;
+uniform float screenShadowCoeff;
+uniform float frameShadowCoeff;
+uniform vec3 frameColor;
+const vec3 fontColor = vec3(1.);
+const vec3 backgroundColor = vec3(0.);
+const vec2 margin = vec2(.05, .05);
 uniform sampler2D vram;
 
 float rgb2grey(vec3 v) {
@@ -87,13 +87,13 @@ float rgb2grey(vec3 v) {
 }
 
 vec3 convertWithChroma(vec3 v) {
-	return fontColor.rgb * mix(vec3(rgb2grey(v)), v, chromaColor);
+	return fontColor * mix(vec3(rgb2grey(v)), v, chromaColor);
 }
 
 vec4 blur4(sampler2D image, vec2 uv) {
 	// https://code.qt.io/cgit/qt/qt5compat.git/tree/src/imports/graphicaleffects5/shaders_ng/fastblur_internal.vert?h=6.9.1
 	// https://code.qt.io/cgit/qt/qt5compat.git/tree/src/imports/graphicaleffects5/shaders_ng/fastblur_internal.frag?h=6.9.1
-	vec2 step = vec2(.002, .002);
+	vec2 step = vec2(.002);
 	return .25 * (texture(image, vec2(uv.x + step.x, uv.y + step.y * 0.36))
 		+ texture(image, vec2(uv.x + step.x * 0.36, uv.y - step.y))
 		+ texture(image, vec2(uv.x - step.x * 0.36, uv.y + step.y))
@@ -142,20 +142,19 @@ void main() {
 	txt_color += leftColor * vec3(.1, .2, .3) + rightColor * vec3(.3, .2, .1);
 
 	{
-		float color = 0.0001;
-		color += noiseVal.z * staticNoise * (1.0 - distance * 1.3);
+		float color = .0001;
+		color += noiseVal.z * staticNoise * (1. - distance * 1.3);
 		float curvatureCoordsYMirroredRepeat = 1. - abs(fract(curvatureCoords.y * .5) * 2. - 1.);
 		color += fract(smoothstep(-.5, 0., curvatureCoordsYMirroredRepeat * .5 - fract(time * .0001))) * glowingLine;
-		txt_color += vec3(0.0001);
-		txt_color += fontColor.rgb * vec3(color);
+		txt_color += fontColor * color + .0001;
 	}
 	float greyscale_color = rgb2grey(txt_color);
 
 	float reflectionMask = sum2(step(vec2(0.0), curvatureCoords) - step(vec2(1.0), curvatureCoords));
 	reflectionMask = clamp(reflectionMask, 0.0, 1.0);
 
-	vec3 foregroundColor = mix(fontColor.rgb, txt_color * fontColor.rgb / greyscale_color, chromaColor);
-	vec3 finalColor = mix(backgroundColor.rgb, foregroundColor, greyscale_color * reflectionMask);
+	vec3 foregroundColor = mix(fontColor, txt_color * fontColor / greyscale_color, chromaColor);
+	vec3 finalColor = mix(backgroundColor, foregroundColor, greyscale_color * reflectionMask);
 
 	vec4 bloomFullColor = blur4(vram, txt_coords);
 	vec3 bloomColor = bloomFullColor.rgb;
@@ -165,13 +164,12 @@ void main() {
 	finalColor *= 1.0 + clamp(sin(time * .00114) + cos(time * .00514) + (fract(time * .01919) - .5) * fract(time * .00810) * .25, -.5, .5) * flickering;
 
 	float vignette = sqrt(max(.5, 1. - length(cc)));
-	vec3 color = frameColor.rgb * vec3(1.0 - vignette);
+	vec3 color = frameColor * vec3(1.0 - vignette);
 	float frameShadow = max2(positiveLog(-curvatureCoords * frameShadowCoeff + vec2(1.0)) + positiveLog(curvatureCoords * frameShadowCoeff - vec2(frameShadowCoeff - 1.0)));
 	frameShadow = max(sqrt(frameShadow), 0.0);
 	color *= frameShadow;
-	float alpha = sum2(1.0 - step(vec2(0.0), curvatureCoords) + step(vec2(1.0), curvatureCoords));
-	alpha = clamp(alpha, 0.0, 1.0);
-	alpha *= mix(1.0, .9, frameShadow);
+	float alpha = 1. - prod2(step(vec2(0.), curvatureCoords) * (1. - step(vec2(1.), curvatureCoords)));
+	alpha *= mix(1., .9, frameShadow);
 	{
 		float screenShadow = 1.0 - prod2(positiveLog(curvatureCoords * screenShadowCoeff + vec2(1.0)) * positiveLog(-curvatureCoords * screenShadowCoeff + vec2(screenShadowCoeff + 1.0)));
 		alpha = max(.8 * screenShadow, alpha);
@@ -185,13 +183,8 @@ void main() {
 	const gl = canvas.getContext('webgl2', { alpha: false, powerPreference: 'low-power' })
 
 	const lerp = (a, b, t) => a * (1 - t) + b * t
-	const mix = (c1, c2, alpha) => c1.map((x, i) => lerp(c2[i], x, alpha))
-	let backgroundColor = [0, 0, 0, 1]
-	let fontColor = [1, 1, 1, 1]
 	let ambientLight = .15
-	let screenCurvature = .4
 	let cols = 80
-	let bloom = .3
 
 	const bufferInfo0 = twgl.createFramebufferInfo(gl, [
 		{ mag: gl.NEAREST, wrap: gl.MIRRORED_REPEAT },
@@ -246,19 +239,10 @@ void main() {
 		}),
 		uniforms: {
 			scale: [1, 1],
-			time: 0,
 			rgbShift: .015 / cols,
-			chromaColor: 1,
-			bloom: bloom * 2.5,
-			jitter: .15,
-			flickering: .1,
-			screenCurvature: screenCurvature * .4,
 			screenShadowCoeff: lerp(18, 12, ambientLight),
 			frameShadowCoeff: lerp(18, 12, ambientLight),
-			frameColor: mix([1, 1, 1, 1], mix(fontColor, backgroundColor, .2), lerp(.2, .8, ambientLight)),
-			fontColor,
-			backgroundColor,
-			margin: [.05, .05],
+			frameColor: Array(3).fill(lerp(.36, .84, ambientLight)),
 			vram: bufferInfo0.attachments[0],
 		},
 	})]
