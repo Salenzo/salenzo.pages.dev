@@ -32,16 +32,22 @@ precision mediump float;
 
 in vec2 v_texcoord;
 out vec4 outColor;
+uniform highp float time;
 uniform sampler2D textBuffer;
 uniform sampler2D font;
 uniform sampler2D palette;
 
 void main() {
 	vec4 cell = texture(textBuffer, v_texcoord) * .99609375; // 255/256
+	vec2 textBufferSize = vec2(textureSize(textBuffer, 0));
+	vec2 coordInCell = fract(v_texcoord * textBufferSize);
+	float backgroundFactor =
+		coordInCell.y >= fract(cell.b * 16.) && coordInCell.y <= cell.b + .0625
+			&& fract(time * .004) < .5 ? 16. : 1.;
 	outColor = mix(
-		texture(palette, vec2(cell.a)),
-		texture(palette, vec2(cell.a * 16.)),
-		texture(font, cell.rg + fract(v_texcoord * vec2(textureSize(textBuffer, 0))) / vec2(64., 32.))
+		texture(palette, vec2(cell.a * backgroundFactor + .001)),
+		texture(palette, vec2(cell.a * 16. + .001)),
+		texture(font, cell.rg + coordInCell / vec2(64., 32.))
 	);
 }
 </script>
@@ -251,6 +257,12 @@ void main() {
 	let textBufferDirty = false
 	let cursorX = 0
 	let cursorY = 0
+	let cursorEnabled = true
+	function clear(color = 0x07) {
+		new Uint32Array(textBuffer.buffer).fill(0x0f0000 | color << 24)
+		cursorX = cursorY = 0
+	}
+
 	const graphemeClusterMap = {
 		__proto__: null,
 		'\uf1c0': '\u0020\u258f\u0020\u0020\u0612\u0613\u0614\u0615\u0616\u0617\u0618\u0619\u061a\u061b\u061c\u061d\u061e',
@@ -260,7 +272,7 @@ void main() {
 		'\uf1c4': '\u0600\u0601\u0602\u0601\u0601\u0601\u0601\u0602\u0601\u0601\u0601\u0603\u0604\u060f\u0605\u0601\u0606',
 		'\uf1c5': '\u03d2\u03d3\u03d4\u03d5\u03d6\u03d7\u03d8\u03d9\u03da\u03db\u03dc\u03dd\u03de\u03df\u03e0\u03e1\u03e2',
 	}
-	function print(text, x = cursorX, y = cursorY, color = 0x07) {
+	function print(text, x = cursorX, y = cursorY, color = undefined) {
 		let p = (y * 80 + x) * 4
 		for (let c of text) {
 			c = graphemeClusterMap[c] ?? c
@@ -274,10 +286,10 @@ void main() {
 				if (charCode === 0x0a) {
 					p = (Math.floor(p / (80 * 4)) + 1) * (80 * 4)
 				} else {
-					textBuffer[p++] = (charCode & 0x3f) << 2
-					textBuffer[p++] = (charCode & 0x7c0) >> 3
-					textBuffer[p++] = 0
-					textBuffer[p++] = color
+					textBuffer[p] = (charCode & 0x3f) << 2
+					textBuffer[p + 1] = (charCode & 0x7c0) >> 3
+					if (color !== undefined) textBuffer[p + 3] = color
+					p += 4
 				}
 				if (p > textBuffer.length) {
 					textBuffer.copyWithin(0, 80 * 4)
@@ -296,6 +308,7 @@ void main() {
 	// Power-On Self Test
 	async function post() {
 		// https://ncot.uk/projects/dosdev/lets-recreate-a-90s-pc-bios-boot-screen/
+		clear()
 		print(`
 ǄǅǆǇ Ŝalenzo Modular BIOS v1.0.0-rc1
 ǈǉǊǋ Copyright (C) 2025, Ŝalenzo Org.
@@ -320,9 +333,6 @@ Memory Testing : 114514K OK`)
 		print('Detecting IDE drives ...', 0, 9)
 		await delay(250)
 		print('  Primary Master  : None\n   Primary Slave  : None\nSecondary Master  : None\n Secondary Slave  : None', 0, 9)
-		// setInterval(() => {
-		// 	print((Math.random() * 16 | 0).toString(16).toUpperCase())
-		// }, 100)
 	}
 
 	const targetAspectRatio = 4 / 3
@@ -332,16 +342,20 @@ Memory Testing : 114514K OK`)
 		const viewportHeight = gl.canvas.height
 
 		if (textBufferDirty) {
+			const i = (cursorY * 80 + cursorX) * 4 + 2
+			if (cursorEnabled) textBuffer[i] = 0xed
 			twgl.setTextureFromArray(gl, drawObjects0[0].uniforms.textBuffer, textBuffer, {
 				width: 80,
 				height: 25,
 				minMag: gl.NEAREST,
 			})
+			if (cursorEnabled) textBuffer[i] = 0x0f
 			textBufferDirty = false
 		}
 		twgl.bindFramebufferInfo(gl, bufferInfo0)
 		gl.clearColor(.19, .19, .810, 1)
 		gl.clear(gl.COLOR_BUFFER_BIT)
+		drawObjects0[0].uniforms.time = time
 		twgl.drawObjectList(gl, drawObjects0)
 
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null)
