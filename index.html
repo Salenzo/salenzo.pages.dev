@@ -257,45 +257,34 @@ void main() {
 	let textBufferDirty = false
 	let cursorX = 0
 	let cursorY = 0
-	let cursorEnabled = true
+	let cursorEnabled = false
 	function clear(color = 0x07) {
 		new Uint32Array(textBuffer.buffer).fill(0x0f0000 | color << 24)
+		textBufferDirty = true
 		cursorX = cursorY = 0
 	}
 
-	const graphemeClusterMap = {
+	const characterMap = {
 		__proto__: null,
-		'\uf1c0': '\u0020\u258f\u0020\u0020\u0612\u0613\u0614\u0615\u0616\u0617\u0618\u0619\u061a\u061b\u061c\u061d\u061e',
-		'\uf1c1': '\u0020\u062c\u062d\u062e\u062f\u062d\u0630\u0631\u0632\u0633\u0634\u0635\u062d\u062d\u062d\u0636\u0020',
-		'\uf1c2': '\u0020\u0020\u061f\u0620\u0621\u0622\u0623\u0624\u0625\u0626\u0627\u0628\u0629\u062a\u062b\u0020\u0020',
-		'\uf1c3': '\u0020\u0020\u0607\u0608\u0609\u060a\u060b\u060c\u060d\u0020\u060e\u060f\u0610\u0611\u0020\u0020\u0020',
-		'\uf1c4': '\u0600\u0601\u0602\u0601\u0601\u0601\u0601\u0602\u0601\u0601\u0601\u0603\u0604\u060f\u0605\u0601\u0606',
-		'\uf1c5': '\u03d2\u03d3\u03d4\u03d5\u03d6\u03d7\u03d8\u03d9\u03da\u03db\u03dc\u03dd\u03de\u03df\u03e0\u03e1\u03e2',
 	}
-	function print(text, x = cursorX, y = cursorY, color = undefined) {
+	function print(text = '', x = cursorX, y = cursorY, color = undefined) {
 		let p = (y * 80 + x) * 4
-		for (let c of text) {
-			c = graphemeClusterMap[c] ?? c
-			for (let i = 0; i < c.length; i++) {
-				let charCode = c.charCodeAt(i)
+		for (let i = 0; i < text.length; i++) {
+			let c = text[i]
+			c = characterMap[c] ?? c
+			for (let j = 0; j < c.length && p < textBuffer.length; j++) {
+				let charCode = c.charCodeAt(j)
 				if (charCode >= 0x20a0 && charCode < 0x2300) {
 					charCode += 224
 				} else if (charCode >= 0x2000 && charCode < 0x20a0) {
 					charCode += 1128
+				} else if (charCode >= 0x2390 && charCode < 0x2400) {
+					charCode -= 79
 				}
-				if (charCode === 0x0a) {
-					p = (Math.floor(p / (80 * 4)) + 1) * (80 * 4)
-				} else {
-					textBuffer[p] = (charCode & 0x3f) << 2
-					textBuffer[p + 1] = (charCode & 0x7c0) >> 3
-					if (color !== undefined) textBuffer[p + 3] = color
-					p += 4
-				}
-				if (p > textBuffer.length) {
-					textBuffer.copyWithin(0, 80 * 4)
-					textBuffer.fill(0, -80 * 4)
-					p = textBuffer.length - 80 * 4
-				}
+				textBuffer[p] = (charCode & 0x3f) << 2
+				textBuffer[p + 1] = (charCode & 0x7c0) >> 3
+				if (color !== undefined) textBuffer[p + 3] = color
+				p += 4
 			}
 		}
 		textBufferDirty = true
@@ -309,30 +298,35 @@ void main() {
 	async function post() {
 		// https://ncot.uk/projects/dosdev/lets-recreate-a-90s-pc-bios-boot-screen/
 		clear()
-		print(`
-ǄǅǆǇ Ŝalenzo Modular BIOS v1.0.0-rc1
-ǈǉǊǋ Copyright (C) 2025, Ŝalenzo Org.
-
-salenzo.pages.dev
-
-Main Processor : EYESOFPRIESTESS at 166MHz, 1 CPU(s)
-Memory Testing : 114514K OK`)
-		print('\uf1c0', 60, 1, 0x0e)
-		print('\uf1c1', 60, 2, 0x0e)
-		print('\uf1c2', 60, 3, 0x0e)
-		print('\uf1c3', 60, 4, 0x0e)
-		print('\uf1c4', 60, 5, 0x0e)
-		print('\uf1c5', 60, 6, 0x0a)
+		print('ǄǅǆǇ', 0, 1, 0x0f)
+		print(' Ŝalenzo Modular BIOS v1.0.0-rc1')
+		print('ǈǉǊǋ', 0, 2, 0x0f)
+		print(' Copyright (C) 2025, Ŝalenzo Org.')
+		print('salenzo.pages.dev', 0, cursorY + 2)
+		print('Main Processor : EYESOFPRIESTESS at 166MHz, 1 CPU(s)', 0, cursorY + 2)
+		print('Memory Testing : 114514K OK', 0, cursorY + 1)
+		print('\u0020\u258f\u0020\u0020\u0612\u0613\u0614\u0615\u0616\u0617\u0618\u0619\u061a\u061b\u061c\u061d\u061e', 60, 1, 0x0e)
+		print('\u0020\u062c\u062d\u062e\u062f\u062d\u0630\u0631\u0632\u0633\u0634\u0635\u062d\u062d\u062d\u0636\u0020', 60, 2, 0x0e)
+		print('\u0020\u0020\u061f\u0620\u0621\u0622\u0623\u0624\u0625\u0626\u0627\u0628\u0629\u062a\u062b\u0020\u0020', 60, 3, 0x0e)
+		print('\u0020\u0020\u0607\u0608\u0609\u060a\u060b\u060c\u060d\u0020\u060e\u060f\u0610\u0611\u0020\u0020\u0020', 60, 4, 0x0e)
+		print('\u0600\u0601\u0602\u0601\u0601\u0601\u0601\u0602\u0601\u0601\u0601\u0603\u0604\u060f\u0605\u0601\u0606', 60, 5, 0x0e)
+		print('\u03d2\u03d3\u03d4\u03d5\u03d6\u03d7\u03d8\u03d9\u03da\u03db\u03dc\u03dd\u03de\u03df\u03e0\u03e1\u03e2', 60, 6, 0x0a)
 		print('Press ', 0, 21)
 		print('UNDEFINED', undefined, undefined, 0x0f)
-		print(' to enter SETUP\n05/22/25-114514-1919810-AA')
+		print(' to enter SETUP')
+		print('05/22/25-114514-1919810-AA', 0, cursorY + 1)
 		for (let i = 0; i <= 32768; i += 1024) {
 			print(i.toString().padStart(7), 16, 7)
 			await delay(10)
 		}
 		print('Detecting IDE drives ...', 0, 9)
 		await delay(250)
-		print('  Primary Master  : None\n   Primary Slave  : None\nSecondary Master  : None\n Secondary Slave  : None', 0, 9)
+		print('  Primary Master  : None', 0, 9)
+		print('   Primary Slave  : None', 0, cursorY + 1)
+		print('Secondary Master  : None', 0, cursorY + 1)
+		print(' Secondary Slave  : None', 0, cursorY + 1)
+		await delay(250)
+		clear(0x1f)
 	}
 
 	const targetAspectRatio = 4 / 3
