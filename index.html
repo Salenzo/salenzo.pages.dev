@@ -268,6 +268,7 @@ void main() {
 		__proto__: null,
 	}
 	function print(text = '', x = cursorX, y = cursorY, color = undefined) {
+		text = String(text)
 		let p = (y * 80 + x) * 4
 		for (let i = 0; i < text.length; i++) {
 			let c = text[i]
@@ -327,6 +328,38 @@ void main() {
 		print(' Secondary Slave  : None', 0, cursorY + 1)
 		await delay(250)
 		clear(0x1f)
+		{
+			const title = 'CMOS Setup Utility - Copyright (C) 2025 Ŝalenzo Org.'
+			print(title, 80 - title.length >> 1, 0)
+		}
+		print('╔═══════════════════════════════════════╤══════════════════════════════════════╗', 0, 1)
+		for (let i = 2; i < 24; i++) {
+			print('║', 0, i)
+			print('║', 79, i)
+		}
+		for (let i = 2; i < 17; i++) {
+			print('│', 40, i)
+		}
+		for (const { x, y, text } of [
+			{ x: 3, y: 3, text: '▶ Standard CMOS Features' },
+			{ x: 3, y: 5, text: '▶ Advanced BIOS Features' },
+			{ x: 3, y: 15, text: '▶ PC Health Status' },
+			{ x: 43, y: 3, text: '▶ Frequency/Voltage Control' },
+			{ x: 43, y: 5, text: '  Load Fail-Safe Defaults' },
+			{ x: 43, y: 15, text: '  Exit Without Saving' },
+		]) {
+			print(text, x, y, 0x1e)
+		}
+		print('╟───────────────────────────────────────┴──────────────────────────────────────╢', 0, 17)
+		print('║ Esc : Quit                              ← ↓ ↑ →   : Select Item              ║', 0, 18)
+		print('║ F10 : Save & Exit Setup                                                      ║', 0, 19)
+		print('╟──────────────────────────────────────────────────────────────────────────────╢', 0, 20)
+		function printDescription(text) {
+			text = String(text)
+			print(' '.repeat(78), 1, 22)
+			print(text, 80 - text.length >> 1, 22)
+		}
+		print('╚══════════════════════════════════════════════════════════════════════════════╝', 0, 24)
 	}
 
 	const targetAspectRatio = 4 / 3
