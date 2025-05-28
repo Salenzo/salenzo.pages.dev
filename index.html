@@ -185,6 +185,7 @@ void main() {
 }
 </script>
 <script src="/vendor/twgl.min.js"></script>
+<script src="/vendor/unlzma.js"></script>
 <script>
 	const gl = canvas.getContext('webgl2', { alpha: false, powerPreference: 'low-power' })
 
@@ -264,6 +265,12 @@ void main() {
 		cursorX = cursorY = 0
 	}
 
+	async function loadCJKFont() {
+		const data = new Uint8Array((0xa000 - 0x4e00) * 32)
+		unlzma(data, new Uint8Array(await (await fetch('fontcjk.bin.lzma')).arrayBuffer()))
+		console.log(data)
+	}
+
 	const characterMap = {
 		__proto__: null,
 	}
@@ -326,7 +333,8 @@ void main() {
 		print('   Primary Slave  : None', 0, cursorY + 1)
 		print('Secondary Master  : None', 0, cursorY + 1)
 		print(' Secondary Slave  : None', 0, cursorY + 1)
-		await delay(250)
+		print('Loading Unifont ...', 0, cursorY + 2)
+		await Promise.all([loadCJKFont(), delay(250)])
 		clear(0x1f)
 		{
 			const title = 'CMOS Setup Utility - Copyright (C) 2025 Ŝalenzo Org.'
