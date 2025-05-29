@@ -33,21 +33,36 @@ precision mediump float;
 in vec2 v_texcoord;
 out vec4 outColor;
 uniform highp float time;
-uniform sampler2D textBuffer;
+uniform highp usampler2D textBuffer;
 uniform sampler2D font;
+uniform highp usampler2D cjkFont;
 uniform sampler2D palette;
 
 void main() {
-	vec4 cell = texture(textBuffer, v_texcoord) * .99609375; // 255/256
-	vec2 textBufferSize = vec2(textureSize(textBuffer, 0));
-	vec2 coordInCell = fract(v_texcoord * textBufferSize);
-	float backgroundFactor =
-		coordInCell.y >= fract(cell.b * 16.) && coordInCell.y <= cell.b + .0625
-			&& fract(time * .004) < .5 ? 16. : 1.;
+	ivec2 coord = ivec2(gl_FragCoord.xy);
+	uvec4 cell = texelFetch(textBuffer, coord >> ivec2(3, 4), 0);
+	coord &= ivec2(7, 15);
+	vec4 selector;
+	bool invert = coord.y >= int(cell.b & 15u) && coord.y <= int(cell.b >> 4) + 1
+		&& fract(time * .004) < .5;
+	if (cell.r < 0x20u) {
+		selector = texelFetch(font, coord | ivec2(
+			(cell.g & 63u) << 3,
+			((cell.r & 7u) << 2 | cell.g >> 6u) << 4
+		), 0);
+	} else {
+		selector = vec4(texelFetch(cjkFont, ivec2(
+			int(cell.g & 63u) << 5 | coord.x | coord.y << 1 & 16 ^ 16 | int(cell.r >> 4) & 8,
+			(cell.r - 0x20u & 0x7fu) << 2 | cell.g >> 6
+		), 0).r >> ((coord.y ^ -(coord.y >> 3 & 1 ^ 1)) & 7) & 1u);
+	}
+	if (invert) {
+		selector = 1. - selector;
+	}
 	outColor = mix(
-		texture(palette, vec2(cell.a * backgroundFactor + .001)),
-		texture(palette, vec2(cell.a * 16. + .001)),
-		texture(font, cell.rg + coordInCell / vec2(64., 32.))
+		texelFetch(palette, ivec2(cell.a >> 4, 0), 0),
+		texelFetch(palette, ivec2(cell.a & 15u, 0), 0),
+		selector
 	);
 }
 </script>
@@ -184,6 +199,11 @@ void main() {
 	outColor = vec4(mix(finalColor, color, alpha), 1.0);
 }
 </script>
+<script>
+	const assets = {
+		cjkFont: fetch('fontcjk.bin.lzma').then(response => response.arrayBuffer()),
+	}
+</script>
 <script src="/vendor/twgl.min.js"></script>
 <script src="/vendor/unlzma.js"></script>
 <script>
@@ -210,9 +230,28 @@ void main() {
 		}),
 		uniforms: twgl.createTextures(gl, {
 			// Textures are for text, sure…
-			textBuffer: { src: [0, 0, 0, 0], minMag: gl.NEAREST },
+			textBuffer: {
+				src: [0, 0, 0, 0],
+				minMag: gl.NEAREST,
+				internalFormat: gl.RGBA8UI,
+				format: gl.RGBA_INTEGER,
+				type: gl.UNSIGNED_BYTE,
+			},
 			// https://int10h.org/oldschool-pc-fonts/fontlist/font?ibm_vga_8x16
-			font: { src: 'font.webp', mag: gl.NEAREST, color: [0, 0, 0, 0] },
+			font: {
+				src: 'font.webp',
+				mag: gl.NEAREST,
+				color: [0, 0, 0, 0],
+				internalFormat: gl.RGB,
+				format: gl.RGB,
+			},
+			cjkFont: {
+				src: [0],
+				minMag: gl.NEAREST,
+				internalFormat: gl.R8UI,
+				format: gl.RED_INTEGER,
+				type: gl.UNSIGNED_BYTE,
+			},
 			palette: {
 				width: 16,
 				height: 1,
@@ -265,12 +304,6 @@ void main() {
 		cursorX = cursorY = 0
 	}
 
-	async function loadCJKFont() {
-		const data = new Uint8Array((0xa000 - 0x4e00) * 32)
-		unlzma(data, new Uint8Array(await (await fetch('fontcjk.bin.lzma')).arrayBuffer()))
-		console.log(data)
-	}
-
 	const characterMap = {
 		__proto__: null,
 	}
@@ -289,8 +322,18 @@ void main() {
 				} else if (charCode >= 0x2390 && charCode < 0x2400) {
 					charCode -= 79
 				}
-				textBuffer[p] = (charCode & 0x3f) << 2
-				textBuffer[p + 1] = (charCode & 0x7c0) >> 3
+				if (charCode >= 0x4e00 && charCode < 0xa000) {
+					charCode += 0x2000 - 0x4e00
+					textBuffer[p] = charCode >> 8
+					textBuffer[p + 1] = charCode & 0xff
+					if (color !== undefined) textBuffer[p + 3] = color
+					p += 4
+					charCode |= 0x8000
+				} else {
+					charCode &= 0x7ff
+				}
+				textBuffer[p] = charCode >> 8
+				textBuffer[p + 1] = charCode & 0xff
 				if (color !== undefined) textBuffer[p + 3] = color
 				p += 4
 			}
@@ -334,7 +377,18 @@ void main() {
 		print('Secondary Master  : None', 0, cursorY + 1)
 		print(' Secondary Slave  : None', 0, cursorY + 1)
 		print('Loading Unifont ...', 0, cursorY + 2)
-		await Promise.all([loadCJKFont(), delay(250)])
+		const cjkFont = new Uint8Array((0xa000 - 0x4e00) * 32)
+		unlzma(cjkFont, new Uint8Array((await Promise.all([assets.cjkFont, delay(250)]))[0]))
+		twgl.setTextureFromArray(gl, drawObjects0[0].uniforms.cjkFont, cjkFont, {
+			width: 2048,
+			height: 328,
+			minMag: gl.NEAREST,
+			internalFormat: gl.R8UI,
+			format: gl.RED_INTEGER,
+			type: gl.UNSIGNED_BYTE,
+		})
+		print('欢迎使用                  ', 0)
+		return
 		clear(0x1f)
 		{
 			const title = 'CMOS Setup Utility - Copyright (C) 2025 Ŝalenzo Org.'
@@ -372,9 +426,8 @@ void main() {
 
 	const targetAspectRatio = 4 / 3
 	requestAnimationFrame(function render(time) {
-		twgl.resizeCanvasToDisplaySize(gl.canvas)
-		const viewportWidth = gl.canvas.width
-		const viewportHeight = gl.canvas.height
+		const viewportWidth = canvas.width
+		const viewportHeight = canvas.height
 
 		if (textBufferDirty) {
 			const i = (cursorY * 80 + cursorX) * 4 + 2
@@ -383,6 +436,9 @@ void main() {
 				width: 80,
 				height: 25,
 				minMag: gl.NEAREST,
+				internalFormat: gl.RGBA8UI,
+				format: gl.RGBA_INTEGER,
+				type: gl.UNSIGNED_BYTE,
 			})
 			if (cursorEnabled) textBuffer[i] = 0x0f
 			textBufferDirty = false
@@ -409,4 +465,10 @@ void main() {
 
 		requestAnimationFrame(render)
 	})
+
+	// https://webgl2fundamentals.org/webgl/lessons/webgl-resizing-the-canvas.html
+	new ResizeObserver(([{ target: canvas, devicePixelContentBoxSize: [{ inlineSize: width, blockSize: height }] }]) => {
+		canvas.width = Math.min(Math.max(width, 1), 16384)
+		canvas.height = Math.min(Math.max(height, 1), 16384)
+	}).observe(canvas, { box: 'device-pixel-content-box' })
 </script>
