@@ -199,11 +199,6 @@ void main() {
 	outColor = vec4(mix(finalColor, color, alpha), 1.0);
 }
 </script>
-<script>
-	const assets = {
-		cjkFont: fetch('fontcjk.bin.lzma').then(response => response.arrayBuffer()),
-	}
-</script>
 <script src="/vendor/twgl.min.js"></script>
 <script src="/vendor/unlzma.js"></script>
 <script>
@@ -347,6 +342,7 @@ void main() {
 
 	// Power-On Self Test
 	async function post() {
+		let cjkFontCompressed = fetch('fontcjk.bin.lzma').then(response => response.arrayBuffer())
 		// https://ncot.uk/projects/dosdev/lets-recreate-a-90s-pc-bios-boot-screen/
 		clear()
 		print('ǄǅǆǇ', 0, 1, 0x0f)
@@ -378,7 +374,7 @@ void main() {
 		print(' Secondary Slave  : None', 0, cursorY + 1)
 		print('Loading Unifont ...', 0, cursorY + 2)
 		const cjkFont = new Uint8Array((0xa000 - 0x4e00) * 32)
-		unlzma(cjkFont, new Uint8Array((await Promise.all([assets.cjkFont, delay(250)]))[0]))
+		unlzma(cjkFont, new Uint8Array((await Promise.all([cjkFontCompressed, delay(250)]))[0]))
 		twgl.setTextureFromArray(gl, drawObjects0[0].uniforms.cjkFont, cjkFont, {
 			width: 2048,
 			height: 328,
