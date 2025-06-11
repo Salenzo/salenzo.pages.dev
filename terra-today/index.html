@@ -69,4 +69,9 @@ Wooooo
 			a.disabled = false
 		}
 	}
+
+	if (location.hash.match(/^#\d{30,}$/)) {
+		// Remove garbage data in URL appended by QArt coder.
+		history.replaceState(null, '', location.pathname + location.search)
+	}
 </script>
