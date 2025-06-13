@@ -9,7 +9,7 @@ create table answer_log (
 create index answer_log_index on answer_log (correct, project, input);
 */
 
-const sha256 = async input => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))), b => ('0' + b.toString(16)).slice(-2)).join('')
+import { hashAnswer } from '../../../common/answer.js'
 
 // GET /<project>/answer/<hash>?input=<string> = check answer
 export async function onRequest(context) {
@@ -25,48 +25,12 @@ export async function onRequest(context) {
 		if (!input) {
 			return new Response('input?', { status: 400 })
 		}
-		if (context.params.input !== await sha256(`
-嘟嘟嘟 嘟嘟嘟
-Work work work work
-Work work work work
-Work work work work
-勤劳又勇敢的血狼破军
-为了团队的关键刷铁机
-他做出了巨大的贡献
-巨大的牺牲
-巨大的carry
-无敌了 无敌了
-相信武魂真身！
-全军出击！我咬死你！
-Wooooo
-牙崩了…牙崩了…
-Wooooo
-牙崩了吗？牙崩了吗？！
-卧槽我们狗神！
-Wooooo
-我即是天选，也是唯一！
-无敌了 无敌了
-${input}
-勤劳又勇敢的血狼破军
-为冠军厨的关键蓟县屋
-他做出了巨大的贡献
-巨大的牺牲
-巨大的carry
-无敌了 无敌了
-相信武魂真身！
-全军出击！我咬死你！
-Wooooo
-牙崩了…牙崩了…
-Wooooo
-牙崩了吗？牙崩了吗？！
-我敲我们狗神！
-Wooooo
-我即是天选，也是VE！
-无敌了 无敌了`)) {
+		if (context.params.input !== await hashAnswer(input)) {
 			return new Response('input!?', { status: 400 })
 		}
 		const response = await context.env.ASSETS.fetch(context.request)
-		if (response.ok) {
+		const text = response.ok ? await response.text() : ''
+		if (text.startsWith('✓')) {
 			const [
 				{ success: insertSuccess },
 				{ success: selectSuccess, results: [{ rank }] },
@@ -81,7 +45,7 @@ Wooooo
 			if (!insertSuccess || !selectSuccess) {
 				return new Response(':(', { status: 424 })
 			}
-			return new Response(rank.toString())
+			return new Response(text.replace('#?', '#' + rank))
 		} else {
 			const { success } = await context.env.answer_log.prepare(
 				'insert into answer_log (project, input, correct) values (?, ?, false)'
